@@ -1,0 +1,112 @@
+---
+title: "Time Series Algorithm Practice"
+author: "Rohan Krishnan"
+date: "2024-06-13"
+output: html_document
+---
+#G4G ARIMA Forecasting with "AirPassengers" Dataset
+```{r}
+#Libraries
+library(tidyverse)
+#install.packages("forecast")
+library(forecast)
+#Load data
+data("AirPassengers")
+
+#Convert to ts object
+ts_data <- ts(AirPassengers, frequency = 12, start = c(1949, 1))
+
+ts_data %>% glimpse()
+
+#Train/test split
+train <- window(ts_data, start = c(1949, 1), end = c(1958, 12))
+test <- window(ts_data, start = c(1959, 1))
+
+train %>% glimpse()
+test %>% glimpse()
+
+#Train ARIMA
+arima_mod <- auto.arima(train)
+
+#12-month forecast
+forecast_res <- forecast(arima_mod, h = 12)
+summary(arima_mod)
+
+#Plot
+plot(forecast_res, xlab = "year", ylab = "# passengers",
+     main = "airline passengers forecast")
+
+#Calculate rmse
+rmse_arima <- sqrt(mean((forecast_res$mean - test)^2))
+print(paste("ARIMA RMSE: ", round(rmse_arima,2)))
+
+#Plot forecast and actual
+plot(forecast_res, main = "airline passengers")
+lines(test, col = "blue")
+```
+
+#G4G Random Forest Forecasting with "Airline Passengers" data set
+```{r}
+#Libararies
+library(randomForest)
+library(ggplot2)
+library(xts)
+
+#Data
+data("AirPassengers")
+ts_data <- AirPassengers
+
+#Convert to dataframe
+ts_df <- data.frame(Date = as.Date(index(ts_data)), Passengers = coredata(ts_data))
+
+#Convert to xts object
+ts_xts <- xts(ts_df$Passengers, order.by = ts_df$Date)
+ts_xts
+
+#Create lag features
+lags <- 1:12
+lagged_data <- lag.xts(ts_xts, k = lags)
+
+#Combine lagged features into one df
+lagged_df <- data.frame(lagged_data)
+
+lagged_df
+
+#Merge the lagged features with the original data
+final_data <- cbind(ts_df, lagged_df)
+final_data
+
+#Remove NAs from lagging
+final_data <- final_data[complete.cases(final_data),]
+final_data
+
+#Split train and test
+train_perc <- 0.8
+train_size <- floor(train_perc * nrow(final_data))
+train <- final_data[1:train_size,]
+test <- final_data[(train_size + 1):nrow(final_data),]
+
+tail(train)
+tail(test)
+
+#Fit Random Forest model
+set.seed(100)
+rf_model <- randomForest(Passengers ~., data = train, ntree = 100)
+
+#Forecast
+forecast <- predict(rf_model, test)
+forecast
+
+#Calculate rmse
+rmse_rf <- sqrt(mean((test$Passengers - forecast)^2))
+print(paste("Random Forest RMSE: ", round(rmse_rf, 2)))
+
+#Plot
+test$predictions <- forecast
+ggplot(final_data) +
+  geom_line(aes(x = Date, y = Passengers, color = "Original")) +
+  geom_line(data = test, aes(x = Date, y = predictions, color = "Forecast")) +
+  scale_color_manual(values = c("Original" = "blue", "Forecast" = "red")) +
+  labs(title = "Time Series Forecasting with Random Forest", y = "Passengers")
+
+```
